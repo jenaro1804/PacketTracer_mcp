@@ -1,0 +1,46 @@
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // SDK oficial de Cisco para hablar con Packet Tracer (PTMP / IPC).
+    // Copiado desde la instalacion de PT 9.0.0 a la carpeta libs/.
+    implementation files('libs/pt-cep-java-framework-9.0.0.0.jar')
+
+    // Dependencias en runtime del jar de Cisco (declaradas en su pom.xml interno).
+    // PT no las incluye, hay que traerlas de Maven Central.
+    implementation 'commons-logging:commons-logging:1.1.1'
+    implementation 'commons-lang:commons-lang:2.5'
+    implementation 'commons-codec:commons-codec:1.6'
+    implementation 'commons-collections:commons-collections:3.2'
+
+    // SDK oficial de MCP para Java (servidores y clientes).
+    implementation 'io.modelcontextprotocol.sdk:mcp:1.0.0'
+
+    // Logging: el framework de Cisco y el SDK de MCP usan SLF4J.
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+application {
+    mainClass = 'com.ptmcp.PtMcpServer'
+}
+
+// Tarea aparte para correr el smoke test antiguo (sin pasar por el servidor MCP).
+// Util mientras desarrollamos: ./gradlew smoketest
+tasks.register('smoketest', JavaExec) {
+    group = 'application'
+    description = 'Corre el smoke test directo contra PT (sin MCP).'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.ptmcp.Main'
+    standardInput = System.in
+}

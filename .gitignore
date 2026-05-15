@@ -1,0 +1,38 @@
+# Cisco SDK jar — propietario, NO redistribuir.
+# Cada usuario lo copia de su instalacion de Packet Tracer.
+libs/*.jar
+!libs/.gitkeep
+
+# Artefactos firmados con el secret. Se regeneran con meta.exe a partir del XML.
+pta/**/*.pta
+
+# XML con el secret real. Se genera a partir de ptmcp.xml.template.
+pta/ptmcp/ptmcp.xml
+
+# Credenciales locales (alternativa a variables de entorno).
+local.properties
+
+# Build artefactos.
+build/
+.gradle/
+out/
+bin/
+*.class
+
+# Logs del smoke test.
+*.log
+
+# Notas personales / contexto para Claude — NO publicar.
+CLAUDE.md
+MCP-SCOPE.md
+
+# IDEs.
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Sistema.
+.DS_Store
+Thumbs.db

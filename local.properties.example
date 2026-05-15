@@ -1,0 +1,13 @@
+# Copia este archivo a `local.properties` y completa los valores.
+# `local.properties` esta en .gitignore — NO lo subas al repo.
+#
+# Alternativa: usar variables de entorno (tienen prioridad sobre este archivo):
+#   PT_MCP_AUTH_APPLICATION
+#   PT_MCP_AUTH_SECRET
+
+# ID reverse-domain de la app. Debe coincidir con <ID> en pta/ptmcp/ptmcp.xml.
+pt.mcp.auth.application=com.example.ptmcp.connector
+
+# Secret compartido. Debe coincidir con <KEY> en pta/ptmcp/ptmcp.xml.
+# Cambialo por una cadena fuerte propia.
+pt.mcp.auth.secret=REPLACE_WITH_YOUR_OWN_SECRET
