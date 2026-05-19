@@ -327,6 +327,28 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Enciende o apaga un dispositivo (cualquier tipo: router, switch, PC, ...).
+     * Equivale al boton de power del dispositivo: lo reinicia sin borrarlo ni su
+     * configuracion. Apagar y volver a encender un router dispara de nuevo el
+     * arranque simulado (~30-60s); recordar pt_skip_boot tras encenderlo.
+     *
+     * @param name nombre del dispositivo (ej. "Router0").
+     * @param on   true para encender, false para apagar.
+     * @return el estado leido de vuelta desde PT tras aplicar el cambio.
+     */
+    public PowerResult setPower(String name, boolean on) {
+        if (name == null || name.isEmpty()) {
+            throw new IllegalArgumentException("name es obligatorio.");
+        }
+        Device d = network().getDevice(name);
+        if (d == null) {
+            throw new IllegalArgumentException("No existe dispositivo '" + name + "'.");
+        }
+        d.setPower(on);
+        return new PowerResult(name, d.getPower());
+    }
+
+    /**
      * Configura una IP estatica en una interfaz de un end-device (PC, Laptop,
      * Server). Apaga DHCP automaticamente antes de aplicar la IP, para que el
      * dispositivo quede efectivamente en modo estatico (si DHCP siguiera activo,
@@ -549,6 +571,16 @@ public class PtIpcClient implements AutoCloseable {
             this.ip = ip;
             this.mask = mask;
             this.gateway = gateway;
+        }
+    }
+
+    public static final class PowerResult {
+        public final String device;
+        public final boolean powered;
+
+        public PowerResult(String device, boolean powered) {
+            this.device = device;
+            this.powered = powered;
         }
     }
 

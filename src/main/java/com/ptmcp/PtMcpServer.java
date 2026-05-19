@@ -4,6 +4,7 @@ import com.ptmcp.PtIpcClient.CliResult;
 import com.ptmcp.PtIpcClient.DeviceInfo;
 import com.ptmcp.PtIpcClient.EndpointDhcpResult;
 import com.ptmcp.PtIpcClient.EndpointIpResult;
+import com.ptmcp.PtIpcClient.PowerResult;
 import com.ptmcp.PtIpcClient.Topology;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapperSupplier;
@@ -116,6 +117,20 @@ public final class PtMcpServer {
                                 + "\"properties\":{\"name\":{\"type\":\"string\"}},"
                                 + "\"required\":[\"name\"],\"additionalProperties\":false}",
                         (ex, req) -> handleSkipBoot(conn, req.arguments())),
+
+                tool(jm, "pt_power",
+                        "Enciende o apaga un dispositivo (router, switch, PC, ...). Equivale al boton "
+                                + "de power: lo reinicia sin borrarlo ni perder su configuracion. Apagar y "
+                                + "reencender un router relanza el arranque (~30-60s); llamar pt_skip_boot "
+                                + "despues de encenderlo.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Nombre del dispositivo (ej. Router0).\"},"
+                                + "\"on\":{\"type\":\"boolean\",\"description\":\"true para encender, false para apagar.\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"on\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handlePower(conn, req.arguments())),
 
                 tool(jm, "pt_run_cli",
                         "Ejecuta un comando IOS en un dispositivo Cisco (router, switch, ASA). "
@@ -265,6 +280,21 @@ public final class PtMcpServer {
                     Map.of("applied", ok));
         } catch (Exception e) {
             return error("skipBoot fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handlePower(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            boolean on = reqBool(args, "on");
+            PowerResult r = conn.withClient(c -> c.setPower(device, on));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", r.device);
+            structured.put("powered", r.powered);
+            String text = r.device + " ahora esta " + (r.powered ? "encendido" : "apagado") + ".";
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("power fallo: " + e.getMessage());
         }
     }
 
