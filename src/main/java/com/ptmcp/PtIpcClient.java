@@ -6,12 +6,14 @@ import com.cisco.pt.ipc.IPCFactory;
 import com.cisco.pt.ipc.enums.CommandStatus;
 import com.cisco.pt.ipc.enums.ConnectType;
 import com.cisco.pt.ipc.enums.DeviceType;
+import com.cisco.pt.ipc.enums.FileOpenReturnValue;
 import com.cisco.pt.ipc.sim.CiscoDevice;
 import com.cisco.pt.util.Pair;
 import com.cisco.pt.ipc.sim.Device;
 import com.cisco.pt.ipc.sim.HostPort;
 import com.cisco.pt.ipc.sim.Network;
 import com.cisco.pt.ipc.sim.Pc;
+import com.cisco.pt.ipc.ui.AppWindow;
 import com.cisco.pt.ipc.ui.IPC;
 import com.cisco.pt.ipc.ui.LogicalWorkspace;
 import com.cisco.pt.ptmp.ConnectionNegotiationProperties;
@@ -349,6 +351,37 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Guarda la topologia actual en un archivo .pkt. La ruta es del lado de la
+     * maquina donde corre Packet Tracer (en este proyecto, la misma). Usar ruta
+     * absoluta.
+     *
+     * @param path ruta destino (ej. "C:\\redes\\lab1.pkt").
+     * @return true si PT confirma el guardado.
+     */
+    public boolean saveFile(String path) {
+        if (path == null || path.isEmpty()) {
+            throw new IllegalArgumentException("path es obligatorio.");
+        }
+        return appWindow().fileSaveAs(path);
+    }
+
+    /**
+     * Abre un archivo .pkt en Packet Tracer, reemplazando la topologia actual.
+     * La ruta es del lado de la maquina donde corre PT. Usar ruta absoluta.
+     *
+     * @param path ruta del archivo a abrir.
+     * @return el nombre del codigo de retorno de PT: "FILE_RETURN_OK" si abrio
+     *         bien, o un codigo de error (ej. "FILE_RETURN_UNABLE_TO_READ_FILE").
+     */
+    public String openFile(String path) {
+        if (path == null || path.isEmpty()) {
+            throw new IllegalArgumentException("path es obligatorio.");
+        }
+        FileOpenReturnValue result = appWindow().fileOpen(path);
+        return result == null ? "FILE_RETURN_UNEXPECTED_FORMAT" : result.name();
+    }
+
+    /**
      * Configura una IP estatica en una interfaz de un end-device (PC, Laptop,
      * Server). Apaga DHCP automaticamente antes de aplicar la IP, para que el
      * dispositivo quede efectivamente en modo estatico (si DHCP siguiera activo,
@@ -507,6 +540,11 @@ public class PtIpcClient implements AutoCloseable {
     LogicalWorkspace logicalWorkspace() {
         requireConnected();
         return ipc.appWindow().getActiveWorkspace().getLogicalWorkspace();
+    }
+
+    AppWindow appWindow() {
+        requireConnected();
+        return ipc.appWindow();
     }
 
     // ---- DTOs de salida ----

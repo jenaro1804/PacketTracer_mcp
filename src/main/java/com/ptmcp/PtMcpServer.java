@@ -175,7 +175,29 @@ public final class PtMcpServer {
                                 + "},"
                                 + "\"required\":[\"device\",\"iface\",\"enabled\"],"
                                 + "\"additionalProperties\":false}",
-                        (ex, req) -> handleSetEndpointDhcp(conn, req.arguments()))
+                        (ex, req) -> handleSetEndpointDhcp(conn, req.arguments())),
+
+                tool(jm, "pt_save_file",
+                        "Guarda la topologia actual en un archivo .pkt. La ruta es del lado de la "
+                                + "maquina donde corre Packet Tracer; usar ruta absoluta (ej. C:\\\\redes\\\\lab1.pkt).",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"path\":{\"type\":\"string\",\"description\":\"Ruta absoluta destino .pkt.\"}"
+                                + "},"
+                                + "\"required\":[\"path\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleSaveFile(conn, req.arguments())),
+
+                tool(jm, "pt_open_file",
+                        "Abre un archivo .pkt en Packet Tracer, reemplazando la topologia actual. "
+                                + "La ruta es del lado de la maquina donde corre PT; usar ruta absoluta.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"path\":{\"type\":\"string\",\"description\":\"Ruta absoluta del .pkt a abrir.\"}"
+                                + "},"
+                                + "\"required\":[\"path\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleOpenFile(conn, req.arguments()))
         );
     }
 
@@ -359,6 +381,47 @@ public final class PtMcpServer {
             return ok(text, structured);
         } catch (Exception e) {
             return error("setEndpointDhcp fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleSaveFile(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String path = reqStr(args, "path");
+            boolean saved = conn.withClient(c -> c.saveFile(path));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("path", path);
+            structured.put("saved", saved);
+            String text = saved
+                    ? "Topologia guardada en " + path + "."
+                    : "PT no confirmo el guardado en " + path + ".";
+            return CallToolResult.builder()
+                    .addTextContent(text)
+                    .structuredContent(structured)
+                    .isError(!saved)
+                    .build();
+        } catch (Exception e) {
+            return error("saveFile fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleOpenFile(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String path = reqStr(args, "path");
+            String result = conn.withClient(c -> c.openFile(path));
+            boolean okResult = "FILE_RETURN_OK".equals(result);
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("path", path);
+            structured.put("result", result);
+            String text = okResult
+                    ? "Archivo abierto: " + path + "."
+                    : "No se pudo abrir " + path + " (" + result + ").";
+            return CallToolResult.builder()
+                    .addTextContent(text)
+                    .structuredContent(structured)
+                    .isError(!okResult)
+                    .build();
+        } catch (Exception e) {
+            return error("openFile fallo: " + e.getMessage());
         }
     }
 
