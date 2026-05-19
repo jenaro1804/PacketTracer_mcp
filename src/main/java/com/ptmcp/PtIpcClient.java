@@ -1,5 +1,6 @@
 package com.ptmcp;
 
+import com.cisco.pt.impl.IPAddressImpl;
 import com.cisco.pt.impl.OptionsManager;
 import com.cisco.pt.ipc.IPCFactory;
 import com.cisco.pt.ipc.enums.CommandStatus;
@@ -8,7 +9,9 @@ import com.cisco.pt.ipc.enums.DeviceType;
 import com.cisco.pt.ipc.sim.CiscoDevice;
 import com.cisco.pt.util.Pair;
 import com.cisco.pt.ipc.sim.Device;
+import com.cisco.pt.ipc.sim.HostPort;
 import com.cisco.pt.ipc.sim.Network;
+import com.cisco.pt.ipc.sim.Pc;
 import com.cisco.pt.ipc.ui.IPC;
 import com.cisco.pt.ipc.ui.LogicalWorkspace;
 import com.cisco.pt.ptmp.ConnectionNegotiationProperties;
@@ -323,6 +326,97 @@ public class PtIpcClient implements AutoCloseable {
         return true;
     }
 
+    /**
+     * Configura una IP estatica en una interfaz de un end-device (PC, Laptop,
+     * Server). Apaga DHCP automaticamente antes de aplicar la IP, para que el
+     * dispositivo quede efectivamente en modo estatico (si DHCP siguiera activo,
+     * PT ignoraria la IP estatica). No aplica a routers/switches: para esos usar
+     * runCli.
+     *
+     * @param deviceName nombre del end-device (ej. "PC0").
+     * @param ifaceName  interfaz a configurar (ej. "FastEthernet0").
+     * @param ip         IP estatica (ej. "192.168.1.10").
+     * @param mask       mascara de subred (ej. "255.255.255.0").
+     * @param gateway    gateway por defecto (ej. "192.168.1.1"); null o vacio
+     *                   para omitirlo.
+     */
+    public EndpointIpResult setEndpointIp(String deviceName, String ifaceName,
+                                          String ip, String mask, String gateway) {
+        if (ip == null || ip.isEmpty()) throw new IllegalArgumentException("ip es obligatorio.");
+        if (mask == null || mask.isEmpty()) throw new IllegalArgumentException("mask es obligatorio.");
+        HostBinding hb = resolveHostBinding(deviceName, ifaceName);
+
+        hb.pc.setDhcpFlag(false);
+        hb.port.setDhcpClientFlag(false);
+        hb.port.setIpSubnetMask(new IPAddressImpl(ip), new IPAddressImpl(mask));
+
+        boolean gatewaySet = gateway != null && !gateway.isEmpty();
+        if (gatewaySet) {
+            hb.pc.setDefaultGateway(new IPAddressImpl(gateway));
+        }
+        return new EndpointIpResult(deviceName, ifaceName, ip, mask,
+                gatewaySet ? gateway : null);
+    }
+
+    /**
+     * Activa o desactiva DHCP en una interfaz de un end-device (PC, Laptop,
+     * Server). Operacion inversa de {@link #setEndpointIp}: con enabled=true el
+     * dispositivo vuelve a pedir IP por DHCP.
+     */
+    public EndpointDhcpResult setEndpointDhcp(String deviceName, String ifaceName, boolean enabled) {
+        HostBinding hb = resolveHostBinding(deviceName, ifaceName);
+        hb.pc.setDhcpFlag(enabled);
+        hb.port.setDhcpClientFlag(enabled);
+        return new EndpointDhcpResult(deviceName, ifaceName, enabled);
+    }
+
+    /**
+     * Resuelve un end-device + interfaz a su par (Pc, HostPort), validando que
+     * el dispositivo exista, sea un end-device (no CiscoDevice) y que la interfaz
+     * sea de host. Compartido por setEndpointIp y setEndpointDhcp.
+     */
+    private HostBinding resolveHostBinding(String deviceName, String ifaceName) {
+        if (deviceName == null || deviceName.isEmpty()) {
+            throw new IllegalArgumentException("device es obligatorio.");
+        }
+        if (ifaceName == null || ifaceName.isEmpty()) {
+            throw new IllegalArgumentException("iface es obligatorio.");
+        }
+        Device d = network().getDevice(deviceName);
+        if (d == null) {
+            throw new IllegalArgumentException("No existe dispositivo '" + deviceName + "'.");
+        }
+        if (!(d instanceof Pc)) {
+            throw new IllegalArgumentException(
+                    "El dispositivo '" + deviceName + "' no es un end-device "
+                            + "(tipo=" + d.getType() + "). Esta operacion solo aplica a "
+                            + "PC, Laptop y Server. Para routers/switches usa runCli.");
+        }
+        Pc pc = (Pc) d;
+        var port = pc.getPort(ifaceName);
+        if (port == null) {
+            throw new IllegalArgumentException(
+                    "No existe interfaz '" + ifaceName + "' en '" + deviceName + "'. "
+                            + "Usa getPorts para ver las interfaces disponibles.");
+        }
+        if (!(port instanceof HostPort)) {
+            throw new IllegalArgumentException(
+                    "La interfaz '" + ifaceName + "' de '" + deviceName + "' no admite "
+                            + "configuracion de IP de host.");
+        }
+        return new HostBinding(pc, (HostPort) port);
+    }
+
+    private static final class HostBinding {
+        final Pc pc;
+        final HostPort port;
+
+        HostBinding(Pc pc, HostPort port) {
+            this.pc = pc;
+            this.port = port;
+        }
+    }
+
     private static ConnectType parseConnectType(String raw) {
         String normalized = raw.trim().toUpperCase().replace('-', '_').replace(' ', '_');
         try {
@@ -438,6 +532,35 @@ public class PtIpcClient implements AutoCloseable {
         public Topology(List<DeviceInfo> devices, int linkCount) {
             this.devices = devices;
             this.linkCount = linkCount;
+        }
+    }
+
+    public static final class EndpointIpResult {
+        public final String device;
+        public final String iface;
+        public final String ip;
+        public final String mask;
+        public final String gateway;   // null si no se configuro
+        public final boolean dhcpDisabled = true;
+
+        public EndpointIpResult(String device, String iface, String ip, String mask, String gateway) {
+            this.device = device;
+            this.iface = iface;
+            this.ip = ip;
+            this.mask = mask;
+            this.gateway = gateway;
+        }
+    }
+
+    public static final class EndpointDhcpResult {
+        public final String device;
+        public final String iface;
+        public final boolean dhcpEnabled;
+
+        public EndpointDhcpResult(String device, String iface, boolean dhcpEnabled) {
+            this.device = device;
+            this.iface = iface;
+            this.dhcpEnabled = dhcpEnabled;
         }
     }
 }

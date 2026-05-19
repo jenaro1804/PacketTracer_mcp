@@ -2,6 +2,8 @@ package com.ptmcp;
 
 import com.ptmcp.PtIpcClient.CliResult;
 import com.ptmcp.PtIpcClient.DeviceInfo;
+import com.ptmcp.PtIpcClient.EndpointDhcpResult;
+import com.ptmcp.PtIpcClient.EndpointIpResult;
 import com.ptmcp.PtIpcClient.Topology;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapperSupplier;
@@ -128,7 +130,37 @@ public final class PtMcpServer {
                                 + "},"
                                 + "\"required\":[\"device\",\"command\"],"
                                 + "\"additionalProperties\":false}",
-                        (ex, req) -> handleRunCli(conn, req.arguments()))
+                        (ex, req) -> handleRunCli(conn, req.arguments())),
+
+                tool(jm, "pt_set_endpoint_ip",
+                        "Configura una IP estatica en una interfaz de un end-device (PC, Laptop, Server). "
+                                + "Apaga DHCP automaticamente para que la IP estatica quede efectivamente "
+                                + "aplicada. NO aplica a routers/switches: para esos usa pt_run_cli.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Nombre del end-device (ej. PC0).\"},"
+                                + "\"iface\":{\"type\":\"string\",\"description\":\"Interfaz a configurar (ej. FastEthernet0).\"},"
+                                + "\"ip\":{\"type\":\"string\",\"description\":\"IP estatica (ej. 192.168.1.10).\"},"
+                                + "\"mask\":{\"type\":\"string\",\"description\":\"Mascara de subred (ej. 255.255.255.0).\"},"
+                                + "\"gateway\":{\"type\":\"string\",\"description\":\"Gateway por defecto (ej. 192.168.1.1). Opcional.\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"iface\",\"ip\",\"mask\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleSetEndpointIp(conn, req.arguments())),
+
+                tool(jm, "pt_set_endpoint_dhcp",
+                        "Activa o desactiva DHCP en una interfaz de un end-device (PC, Laptop, Server). "
+                                + "Operacion inversa de pt_set_endpoint_ip: con enabled=true el dispositivo "
+                                + "vuelve a pedir IP por DHCP.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\"},"
+                                + "\"iface\":{\"type\":\"string\",\"description\":\"Interfaz (ej. FastEthernet0).\"},"
+                                + "\"enabled\":{\"type\":\"boolean\",\"description\":\"true para activar DHCP, false para estatico.\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"iface\",\"enabled\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleSetEndpointDhcp(conn, req.arguments()))
         );
     }
 
@@ -257,6 +289,49 @@ public final class PtMcpServer {
         }
     }
 
+    private static CallToolResult handleSetEndpointIp(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            String iface = reqStr(args, "iface");
+            String ip = reqStr(args, "ip");
+            String mask = reqStr(args, "mask");
+            String gateway = optStr(args, "gateway", "");
+            EndpointIpResult r = conn.withClient(c -> c.setEndpointIp(device, iface, ip, mask, gateway));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", r.device);
+            structured.put("iface", r.iface);
+            structured.put("ip", r.ip);
+            structured.put("mask", r.mask);
+            structured.put("gateway", r.gateway);
+            structured.put("dhcp_disabled", r.dhcpDisabled);
+            String text = "IP estatica aplicada en " + r.device + ":" + r.iface
+                    + " -> " + r.ip + " / " + r.mask
+                    + (r.gateway == null ? "" : " gw " + r.gateway)
+                    + " (DHCP desactivado).";
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("setEndpointIp fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleSetEndpointDhcp(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            String iface = reqStr(args, "iface");
+            boolean enabled = reqBool(args, "enabled");
+            EndpointDhcpResult r = conn.withClient(c -> c.setEndpointDhcp(device, iface, enabled));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", r.device);
+            structured.put("iface", r.iface);
+            structured.put("dhcp_enabled", r.dhcpEnabled);
+            String text = "DHCP " + (r.dhcpEnabled ? "activado" : "desactivado")
+                    + " en " + r.device + ":" + r.iface + ".";
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("setEndpointDhcp fallo: " + e.getMessage());
+        }
+    }
+
     // ====== helpers ======
 
     private static CallToolResult ok(String text, Object structured) {
@@ -283,6 +358,16 @@ public final class PtMcpServer {
     private static String optStr(Map<String, Object> args, String key, String def) {
         Object v = args == null ? null : args.get(key);
         return v == null ? def : v.toString();
+    }
+
+    private static boolean reqBool(Map<String, Object> args, String key) {
+        Object v = args == null ? null : args.get(key);
+        if (v == null) throw new IllegalArgumentException("Falta argumento '" + key + "'.");
+        if (v instanceof Boolean b) return b;
+        String s = v.toString().trim().toLowerCase();
+        if (s.equals("true")) return true;
+        if (s.equals("false")) return false;
+        throw new IllegalArgumentException("Argumento '" + key + "' debe ser boolean, no '" + v + "'.");
     }
 
     private static double reqNum(Map<String, Object> args, String key) {
