@@ -16,6 +16,7 @@ import com.cisco.pt.ipc.sim.Pc;
 import com.cisco.pt.ipc.ui.AppWindow;
 import com.cisco.pt.ipc.ui.IPC;
 import com.cisco.pt.ipc.ui.LogicalWorkspace;
+import com.cisco.pt.ipc.ui.NetworkComponentBox;
 import com.cisco.pt.ptmp.ConnectionNegotiationProperties;
 import com.cisco.pt.ptmp.PacketTracerSession;
 import com.cisco.pt.ptmp.PacketTracerSessionFactory;
@@ -351,6 +352,38 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Lista los tipos de dispositivo disponibles en el catalogo de PT
+     * (los strings validos para pasar a {@link #getDeviceModels}). El formato
+     * exacto lo decide PT (ej. "Router", "Switch", "PC", ...).
+     */
+    public List<String> getDeviceTypes() {
+        return dedup(networkComponentBox().getDeviceTypes());
+    }
+
+    /**
+     * Lista los modelos disponibles para un tipo de dispositivo (ej. para
+     * "Routers" suele incluir "2911"). El {@code type} debe ser uno de los
+     * valores EXACTOS que devuelve {@link #getDeviceTypes} (ej. "Routers", con
+     * mayuscula y plural). El flujo normal es: pedir los tipos primero y copiar
+     * el valor tal cual.
+     */
+    public List<String> getDeviceModels(String type) {
+        if (type == null || type.isEmpty()) {
+            throw new IllegalArgumentException("type es obligatorio.");
+        }
+        return dedup(networkComponentBox().getDeviceModels(type));
+    }
+
+    /**
+     * Quita duplicados preservando el orden de aparicion. El catalogo de PT a
+     * veces repite una entrada (ej. el modelo 2811 aparece al inicio y al final);
+     * con esto la lista que devolvemos es limpia.
+     */
+    private static List<String> dedup(List<String> items) {
+        return new ArrayList<>(new java.util.LinkedHashSet<>(items));
+    }
+
+    /**
      * Guarda la topologia actual en un archivo .pkt. La ruta es del lado de la
      * maquina donde corre Packet Tracer (en este proyecto, la misma). Usar ruta
      * absoluta.
@@ -545,6 +578,10 @@ public class PtIpcClient implements AutoCloseable {
     AppWindow appWindow() {
         requireConnected();
         return ipc.appWindow();
+    }
+
+    NetworkComponentBox networkComponentBox() {
+        return appWindow().getNetworkComponentBox();
     }
 
     // ---- DTOs de salida ----

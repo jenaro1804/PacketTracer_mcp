@@ -197,7 +197,18 @@ public final class PtMcpServer {
                                 + "},"
                                 + "\"required\":[\"path\"],"
                                 + "\"additionalProperties\":false}",
-                        (ex, req) -> handleOpenFile(conn, req.arguments()))
+                        (ex, req) -> handleOpenFile(conn, req.arguments())),
+
+                tool(jm, "pt_get_device_models",
+                        "Lista el catalogo de PT para no adivinar el 'model' de pt_add_device. "
+                                + "Sin 'type' devuelve los tipos de dispositivo disponibles; con 'type' "
+                                + "(uno de esos valores EXACTOS, ej. 'Routers') devuelve los modelos de ese tipo (ej. 2911).",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"type\":{\"type\":\"string\",\"description\":\"Tipo de dispositivo (uno de los que devuelve esta misma tool sin argumentos). Opcional.\"}"
+                                + "},"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleGetDeviceModels(conn, req.arguments()))
         );
     }
 
@@ -422,6 +433,30 @@ public final class PtMcpServer {
                     .build();
         } catch (Exception e) {
             return error("openFile fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleGetDeviceModels(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String type = optStr(args, "type", "");
+            if (type.isEmpty()) {
+                List<String> types = conn.withClient(PtIpcClient::getDeviceTypes);
+                String text = "Tipos de dispositivo (" + types.size() + "):\n"
+                        + types.stream().map(t -> "  - " + t).collect(Collectors.joining("\n"))
+                        + "\n(Llama de nuevo con 'type' para ver los modelos de un tipo.)";
+                Map<String, Object> structured = new LinkedHashMap<>();
+                structured.put("types", types);
+                return ok(text, structured);
+            }
+            List<String> models = conn.withClient(c -> c.getDeviceModels(type));
+            String text = "Modelos de '" + type + "' (" + models.size() + "):\n"
+                    + models.stream().map(m -> "  - " + m).collect(Collectors.joining("\n"));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("type", type);
+            structured.put("models", models);
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("getDeviceModels fallo: " + e.getMessage());
         }
     }
 
