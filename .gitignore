@@ -23,7 +23,9 @@ bin/
 *.log
 
 # Notas personales / contexto para Claude — NO publicar.
-CLAUDE.md
+# CLAUDE.md sale del .gitignore a proposito para poder @-taguearlo en Claude
+# Code (Git Bash/IDE ignoran archivos gitignoreados al autocompletar). El dueño
+# se encarga manualmente de NO subirlo (nunca hace `git add .` ciego).
 MCP-SCOPE.md
 
 # IDEs.

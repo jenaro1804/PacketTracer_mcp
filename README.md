@@ -21,6 +21,12 @@ Working end-to-end. Tools exposed:
 | `pt_connect_devices` | Cable two interfaces together. |
 | `pt_skip_boot` | Skip the simulated boot on a router/switch (~30-60s). |
 | `pt_run_cli` | Send an IOS command and get back the output. |
+| `pt_set_endpoint_ip` | Set a static IP/mask (and optional gateway) on an end-device (PC/Laptop/Server). Turns off DHCP first. |
+| `pt_set_endpoint_dhcp` | Switch an end-device's interface to DHCP. |
+| `pt_power` | Power any device on/off (`Device.setPower`). Re-powering a router restarts its boot. |
+| `pt_save_file` | Save the current `.pkt` to a path on the machine running PT. |
+| `pt_open_file` | Open a `.pkt` from a path on the machine running PT. |
+| `pt_get_device_models` | List PT's device catalog: categories with no arg, models for a given category (e.g. `Routers`). |
 
 ## Requirements
 
@@ -116,7 +122,7 @@ With Packet Tracer running and listening:
 ./smoke-mcp.sh
 ```
 
-You should see the `initialize` response, the list of 7 tools, and a
+You should see the `initialize` response, the list of 13 tools, and a
 `pt_get_topology` result.
 
 ## Hooking it up to Claude Code
@@ -134,7 +140,7 @@ claude mcp add pt-mcp -- "C:\path\to\build\install\pt-mcp\bin\pt-mcp.bat"
 Add `-s user` to make the registration global (any project), otherwise it is
 scoped to the directory you ran the command in.
 
-Restart Claude Code. The 7 tools should show up under the `pt-mcp` server.
+Restart Claude Code. The 13 tools should show up under the `pt-mcp` server.
 
 ## Usage
 
@@ -167,7 +173,7 @@ A few practical tips:
 src/main/java/com/ptmcp/
   PtIpcClient.java       # Wraps the Cisco SDK with a simple Java API.
   ConnectionManager.java # Persistent session + lazy reconnect.
-  PtMcpServer.java       # MCP stdio server; registers the 7 tools.
+  PtMcpServer.java       # MCP stdio server; registers the 13 tools.
   Main.java              # Smoke test against PT (no MCP layer).
 src/main/resources/
   simplelogger.properties # Forces logs to stderr (stdio MCP uses stdout).
@@ -187,6 +193,14 @@ libs/
   returns it.
 - Adding the first PC causes PT to silently add a `Power Distribution Device0`
   artifact (something IoT-related). It is harmless; ignore or filter it.
+- `pt_save_file` / `pt_open_file` paths are resolved on the machine **running
+  Packet Tracer**, not the MCP client. Use absolute paths.
+- `pt_set_endpoint_ip` turns DHCP off before applying the static address (PT
+  otherwise ignores it); `pt_set_endpoint_dhcp` is the inverse.
+- End-devices (PC/Laptop/Server) are not Cisco IOS devices, so they take no
+  `pt_run_cli` — configure them with the `pt_set_endpoint_*` tools instead.
+- `pt_get_device_models` is case/plural-sensitive: pass a category exactly as
+  returned (e.g. `Routers`, not `router`).
 - Logs go to **stderr** by design; the stdio MCP protocol owns stdout.
 
 ## Acknowledgments
