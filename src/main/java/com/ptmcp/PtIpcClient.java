@@ -242,6 +242,21 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Conecta dos dispositivos dejando que PT elija interfaces y tipo de cable
+     * automaticamente (como arrastrar el cable "Automatico" en la GUI). Mas
+     * comodo que connectDevices cuando no importan las interfaces concretas.
+     * La API de Cisco es void: si no lanza excepcion, asumimos exito.
+     *
+     * @param deviceA nombre del primer dispositivo (ej. "PC0").
+     * @param deviceB nombre del segundo dispositivo (ej. "Switch0").
+     */
+    public void autoConnect(String deviceA, String deviceB) {
+        if (deviceA == null || deviceA.isEmpty()) throw new IllegalArgumentException("deviceA es obligatorio.");
+        if (deviceB == null || deviceB.isEmpty()) throw new IllegalArgumentException("deviceB es obligatorio.");
+        logicalWorkspace().autoConnectDevices(deviceA, deviceB);
+    }
+
+    /**
      * Ejecuta un comando IOS en un dispositivo Cisco.
      *
      * @param deviceName nombre del dispositivo (debe ser un CiscoDevice: router,

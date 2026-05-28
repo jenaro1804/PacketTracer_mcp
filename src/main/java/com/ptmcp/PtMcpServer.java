@@ -109,6 +109,19 @@ public final class PtMcpServer {
                                 + "\"additionalProperties\":false}",
                         (ex, req) -> handleConnectDevices(conn, req.arguments())),
 
+                tool(jm, "pt_auto_connect",
+                        "Conecta dos dispositivos dejando que Packet Tracer elija las interfaces y el "
+                                + "tipo de cable automaticamente (como el cable 'Automatico' de la GUI). "
+                                + "Mas comodo que pt_connect_devices cuando no importan las interfaces concretas.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device_a\":{\"type\":\"string\"},"
+                                + "\"device_b\":{\"type\":\"string\"}"
+                                + "},"
+                                + "\"required\":[\"device_a\",\"device_b\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleAutoConnect(conn, req.arguments())),
+
                 tool(jm, "pt_skip_boot",
                         "Salta el arranque simulado de un router/switch Cisco. Sin esto, los routers "
                                 + "tardan ~30-60s en estar listos y los comandos IOS devuelven ERROR_INVALID. "
@@ -298,6 +311,17 @@ public final class PtMcpServer {
                     Map.of("linked", linked));
         } catch (Exception e) {
             return error("connectDevices fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleAutoConnect(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String da = reqStr(args, "device_a");
+            String db = reqStr(args, "device_b");
+            conn.withClientVoid(c -> c.autoConnect(da, db));
+            return ok("autoConnect(" + da + " <-> " + db + ") -> ok", Map.of("ok", true));
+        } catch (Exception e) {
+            return error("autoConnect fallo: " + e.getMessage());
         }
     }
 
