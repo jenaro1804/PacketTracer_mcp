@@ -528,6 +528,94 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Lista el arbol de modulos de un dispositivo (router, switch, ...). Util
+     * para ver que bahias hay libres antes de instalar un modulo (ej. un HWIC-2T
+     * serial en un 2911) con pt_add_module. Solo lectura.
+     *
+     * La estructura es un arbol: el modulo raiz suele tener un solo slot
+     * "no-removible" (la placa madre), y las bahias HWIC/NM reales cuelgan de
+     * ese submodulo. Por eso se recorre recursivamente. Cada nodo lleva su
+     * nombre, slotPath, tipo, la lista de sus slots (index + tipo) y la lista de
+     * sus submodulos instalados.
+     */
+    public ModulesResult getModules(String deviceName) {
+        if (deviceName == null || deviceName.isEmpty()) {
+            throw new IllegalArgumentException("device es obligatorio.");
+        }
+        Device d = network().getDevice(deviceName);
+        if (d == null) {
+            throw new IllegalArgumentException("No existe dispositivo '" + deviceName + "'.");
+        }
+        com.cisco.pt.ipc.sim.Module root = d.getRootModule();
+        ModuleNode tree = root == null ? null : buildModuleNode(root, 0);
+        return new ModulesResult(deviceName, tree);
+    }
+
+    // Profundidad maxima al recorrer el arbol de modulos. Un 2911 son ~2-3
+    // niveles; el tope evita cualquier ciclo patologico del SDK.
+    private static final int MAX_MODULE_DEPTH = 8;
+
+    private static ModuleNode buildModuleNode(com.cisco.pt.ipc.sim.Module m, int depth) {
+        // CADA getter puede reventar con "Making call on null IPC Object":
+        //  - en una bahia VACIA, el proxy entero es nulo y truenan todos.
+        //  - en un contenedor (ej. el modulo raiz) algunos getters como
+        //    getModuleType() truenan aunque getSlotCount() si funcione.
+        // Por eso se lee todo defensivamente y luego se decide si el nodo
+        // vale la pena o es una bahia vacia que se descarta.
+        String name = tryGet(m::getModuleNameAsString, null);
+        String slotPath = tryGet(m::getSlotPath, null);
+        String type = tryGet(() -> {
+            var mt = m.getModuleType();
+            return mt == null ? null : mt.name();
+        }, null);
+
+        List<SlotInfo> slots = new ArrayList<>();
+        int slotCount = tryGet(m::getSlotCount, 0);
+        for (int i = 0; i < slotCount; i++) {
+            final int idx = i;
+            String st = tryGet(() -> {
+                var t = m.getSlotTypeAt(idx);
+                return t == null ? null : t.name();
+            }, null);
+            slots.add(new SlotInfo(i, st));
+        }
+
+        List<ModuleNode> children = new ArrayList<>();
+        if (depth < MAX_MODULE_DEPTH) {
+            int modCount = tryGet(m::getModuleCount, 0);
+            for (int i = 0; i < modCount; i++) {
+                final int idx = i;
+                com.cisco.pt.ipc.sim.Module child = tryGet(() -> m.getModuleAt(idx), null);
+                if (child == null) continue;
+                ModuleNode childNode = buildModuleNode(child, depth + 1);
+                if (isEmptyBay(childNode)) continue; // bahia sin tarjeta
+                children.add(childNode);
+            }
+        }
+        return new ModuleNode(name, slotPath, type, slots, children);
+    }
+
+    /** Una bahia vacia: su proxy IPC es nulo, asi que no pudimos leer nada. */
+    private static boolean isEmptyBay(ModuleNode n) {
+        return n.name == null && n.type == null && n.slots.isEmpty() && n.modules.isEmpty();
+    }
+
+    /**
+     * Ejecuta un getter del SDK devolviendo {@code def} si lanza. OJO: el SDK de
+     * Cisco lanza {@code com.cisco.pt.ipc.IPCError} al tocar un objeto IPC nulo
+     * (bahia vacia / contenedor sin tipo), y esa clase extiende
+     * {@code java.lang.Error}, NO RuntimeException. Por eso aqui se captura
+     * {@code IPCError} explicitamente ademas de RuntimeException.
+     */
+    private static <T> T tryGet(java.util.function.Supplier<T> getter, T def) {
+        try {
+            return getter.get();
+        } catch (com.cisco.pt.ipc.IPCError | RuntimeException e) {
+            return def;
+        }
+    }
+
+    /**
      * Resuelve un end-device + interfaz a su par (Pc, HostPort), validando que
      * el dispositivo exista, sea un end-device (no CiscoDevice) y que la interfaz
      * sea de host. Compartido por setEndpointIp y setEndpointDhcp.
@@ -772,6 +860,44 @@ public class PtIpcClient implements AutoCloseable {
             this.gateway = gateway;
             this.dns = dns;
             this.note = note;
+        }
+    }
+
+    public static final class SlotInfo {
+        public final int index;
+        public final String type;   // tipo de slot (ej. HWIC, NM, ...); null si PT no lo da
+
+        public SlotInfo(int index, String type) {
+            this.index = index;
+            this.type = type;
+        }
+    }
+
+    /** Nodo del arbol de modulos: un modulo con sus slots y sus submodulos. */
+    public static final class ModuleNode {
+        public final String name;            // nombre del modulo (ej. "HWIC-2T", "None" para la placa)
+        public final String slotPath;        // bahia donde esta instalado ("" para la raiz)
+        public final String type;            // ModuleType del modulo
+        public final List<SlotInfo> slots;   // bahias propias de este modulo
+        public final List<ModuleNode> modules; // submodulos instalados en este modulo
+
+        public ModuleNode(String name, String slotPath, String type,
+                          List<SlotInfo> slots, List<ModuleNode> modules) {
+            this.name = name;
+            this.slotPath = slotPath;
+            this.type = type;
+            this.slots = slots;
+            this.modules = modules;
+        }
+    }
+
+    public static final class ModulesResult {
+        public final String device;
+        public final ModuleNode root;   // null si el dispositivo no tiene modulo raiz
+
+        public ModulesResult(String device, ModuleNode root) {
+            this.device = device;
+            this.root = root;
         }
     }
 }

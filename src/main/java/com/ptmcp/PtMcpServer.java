@@ -233,6 +233,21 @@ public final class PtMcpServer {
                                 + "\"additionalProperties\":false}",
                         (ex, req) -> handleGetEndpointConfig(conn, req.arguments())),
 
+                tool(jm, "pt_get_modules",
+                        "Devuelve el arbol de modulos de un dispositivo (router, switch, ...). Util para "
+                                + "ver que bahias hay libres antes de instalar un modulo (ej. un HWIC-2T "
+                                + "serial en un 2911) con pt_add_module. El campo 'root' es un arbol: cada "
+                                + "nodo tiene name, slot_path, type, sus 'slots' (index + tipo) y sus "
+                                + "'modules' (submodulos). Las bahias HWIC/NM suelen colgar de un submodulo "
+                                + "no-removible, no de la raiz. Solo lectura.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Nombre del dispositivo (ej. Router0).\"}"
+                                + "},"
+                                + "\"required\":[\"device\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleGetModules(conn, req.arguments())),
+
                 tool(jm, "pt_save_file",
                         "Guarda la topologia actual en un archivo .pkt. La ruta es del lado de la "
                                 + "maquina donde corre Packet Tracer; usar ruta absoluta (ej. C:\\\\redes\\\\lab1.pkt).",
@@ -515,6 +530,57 @@ public final class PtMcpServer {
             return ok(text, structured);
         } catch (Exception e) {
             return error("getEndpointConfig fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleGetModules(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            PtIpcClient.ModulesResult r = conn.withClient(c -> c.getModules(device));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", r.device);
+            structured.put("root", r.root == null ? null : moduleNodeToMap(r.root));
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(r.device).append(":\n");
+            if (r.root == null) {
+                sb.append("  (sin modulo raiz)");
+            } else {
+                appendModuleNode(sb, r.root, 1);
+            }
+            return ok(sb.toString().stripTrailing(), structured);
+        } catch (Exception e) {
+            return error("getModules fallo: " + e.getMessage());
+        }
+    }
+
+    private static Map<String, Object> moduleNodeToMap(PtIpcClient.ModuleNode n) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("name", n.name);
+        m.put("slot_path", n.slotPath);
+        m.put("type", n.type);
+        m.put("slots", n.slots.stream().map(s -> {
+            Map<String, Object> sm = new LinkedHashMap<>();
+            sm.put("index", s.index);
+            sm.put("type", s.type);
+            return sm;
+        }).collect(Collectors.toList()));
+        m.put("modules", n.modules.stream()
+                .map(PtMcpServer::moduleNodeToMap)
+                .collect(Collectors.toList()));
+        return m;
+    }
+
+    private static void appendModuleNode(StringBuilder sb, PtIpcClient.ModuleNode n, int depth) {
+        String pad = "  ".repeat(depth);
+        sb.append(pad).append(n.name).append(" [").append(n.type).append("]")
+                .append(n.slotPath == null || n.slotPath.isEmpty() ? "" : " @ " + n.slotPath)
+                .append("\n");
+        for (PtIpcClient.SlotInfo s : n.slots) {
+            sb.append(pad).append("  slot[").append(s.index).append("] ").append(s.type).append("\n");
+        }
+        for (PtIpcClient.ModuleNode child : n.modules) {
+            appendModuleNode(sb, child, depth + 1);
         }
     }
 
