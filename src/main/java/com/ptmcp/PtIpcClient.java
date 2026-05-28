@@ -504,6 +504,30 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Lee la configuracion IP de una interfaz de un end-device (PC, Laptop,
+     * Server) para verificarla. Solo lectura.
+     *
+     * Limitacion del SDK: el framework de Cisco NO expone getters para el
+     * gateway ni el DNS de un HostPort (solo setters), asi que esos campos se
+     * devuelven null. Lo IP/mask y el estado de DHCP si se pueden leer.
+     *
+     * @param deviceName nombre del end-device (ej. "PC0").
+     * @param ifaceName  interfaz a consultar (ej. "FastEthernet0").
+     */
+    public EndpointConfigResult getEndpointConfig(String deviceName, String ifaceName) {
+        HostBinding hb = resolveHostBinding(deviceName, ifaceName);
+        String ip = hb.port.getIpAddress() == null ? null : hb.port.getIpAddress().toString();
+        String mask = hb.port.getSubnetMask() == null ? null : hb.port.getSubnetMask().toString();
+        boolean dhcp = hb.pc.getDhcpFlag() || hb.port.isDhcpClientOn();
+        String note = "gateway y dns son null: el SDK de Cisco no expone getters para esos campos "
+                + "(solo se pueden escribir con pt_set_endpoint_ip / pt_set_endpoint_dns). "
+                + "OJO con ip/mask cuando dhcp=true: PT conserva el ultimo valor estatico en el "
+                + "campo aunque DHCP este activo (el getter no se limpia solo), y esa ip puede NO "
+                + "ser la que el DHCP asigne. Para saber el modo, fiarse del campo dhcp, no de ip.";
+        return new EndpointConfigResult(deviceName, ifaceName, ip, mask, dhcp, null, null, note);
+    }
+
+    /**
      * Resuelve un end-device + interfaz a su par (Pc, HostPort), validando que
      * el dispositivo exista, sea un end-device (no CiscoDevice) y que la interfaz
      * sea de host. Compartido por setEndpointIp y setEndpointDhcp.
@@ -725,6 +749,29 @@ public class PtIpcClient implements AutoCloseable {
             this.device = device;
             this.iface = iface;
             this.dns = dns;
+        }
+    }
+
+    public static final class EndpointConfigResult {
+        public final String device;
+        public final String iface;
+        public final String ip;        // null si no tiene IP asignada
+        public final String mask;      // null si no tiene mascara
+        public final boolean dhcp;
+        public final String gateway;   // siempre null: el SDK no expone getter
+        public final String dns;       // siempre null: el SDK no expone getter
+        public final String note;
+
+        public EndpointConfigResult(String device, String iface, String ip, String mask,
+                                    boolean dhcp, String gateway, String dns, String note) {
+            this.device = device;
+            this.iface = iface;
+            this.ip = ip;
+            this.mask = mask;
+            this.dhcp = dhcp;
+            this.gateway = gateway;
+            this.dns = dns;
+            this.note = note;
         }
     }
 }

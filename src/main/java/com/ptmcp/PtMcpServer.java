@@ -217,6 +217,22 @@ public final class PtMcpServer {
                                 + "\"additionalProperties\":false}",
                         (ex, req) -> handleSetEndpointDns(conn, req.arguments())),
 
+                tool(jm, "pt_get_endpoint_config",
+                        "Lee la configuracion IP de una interfaz de un end-device (PC, Laptop, Server): "
+                                + "ip, mascara y si esta en DHCP. LIMITACION del SDK: gateway y dns "
+                                + "siempre vienen null (Cisco no expone getters para esos campos, solo "
+                                + "setters). OJO: con dhcp=true PT conserva el ultimo ip/mask estatico en el "
+                                + "campo (no se limpia) y puede no ser la ip real del DHCP; fiarse del campo "
+                                + "dhcp para el modo. Solo lectura; aplica a PC/Laptop/Server.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Nombre del end-device (ej. PC0).\"},"
+                                + "\"iface\":{\"type\":\"string\",\"description\":\"Interfaz a consultar (ej. FastEthernet0).\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"iface\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleGetEndpointConfig(conn, req.arguments())),
+
                 tool(jm, "pt_save_file",
                         "Guarda la topologia actual en un archivo .pkt. La ruta es del lado de la "
                                 + "maquina donde corre Packet Tracer; usar ruta absoluta (ej. C:\\\\redes\\\\lab1.pkt).",
@@ -475,6 +491,30 @@ public final class PtMcpServer {
             return ok(text, structured);
         } catch (Exception e) {
             return error("setEndpointDns fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleGetEndpointConfig(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            String iface = reqStr(args, "iface");
+            PtIpcClient.EndpointConfigResult r = conn.withClient(c -> c.getEndpointConfig(device, iface));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", r.device);
+            structured.put("iface", r.iface);
+            structured.put("ip", r.ip);
+            structured.put("mask", r.mask);
+            structured.put("dhcp", r.dhcp);
+            structured.put("gateway", r.gateway);
+            structured.put("dns", r.dns);
+            structured.put("note", r.note);
+            String text = r.device + ":" + r.iface + " -> "
+                    + (r.dhcp ? "DHCP" : "estatico")
+                    + ", ip=" + r.ip + ", mask=" + r.mask
+                    + " (gateway/dns no legibles via SDK).";
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("getEndpointConfig fallo: " + e.getMessage());
         }
     }
 
