@@ -203,6 +203,20 @@ public final class PtMcpServer {
                                 + "\"additionalProperties\":false}",
                         (ex, req) -> handleSetEndpointDhcp(conn, req.arguments())),
 
+                tool(jm, "pt_set_endpoint_dns",
+                        "Configura el servidor DNS de una interfaz de un end-device (PC, Laptop, Server). "
+                                + "Equivale al campo 'DNS Server' de IP Configuration. No toca IP/mask/gateway "
+                                + "ni el flag de DHCP. NO aplica a routers/switches: para esos usa pt_run_cli.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Nombre del end-device (ej. PC0).\"},"
+                                + "\"iface\":{\"type\":\"string\",\"description\":\"Interfaz a configurar (ej. FastEthernet0).\"},"
+                                + "\"dns\":{\"type\":\"string\",\"description\":\"IP del servidor DNS (ej. 8.8.8.8).\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"iface\",\"dns\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleSetEndpointDns(conn, req.arguments())),
+
                 tool(jm, "pt_save_file",
                         "Guarda la topologia actual en un archivo .pkt. La ruta es del lado de la "
                                 + "maquina donde corre Packet Tracer; usar ruta absoluta (ej. C:\\\\redes\\\\lab1.pkt).",
@@ -443,6 +457,24 @@ public final class PtMcpServer {
             return ok(text, structured);
         } catch (Exception e) {
             return error("setEndpointDhcp fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleSetEndpointDns(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            String iface = reqStr(args, "iface");
+            String dns = reqStr(args, "dns");
+            PtIpcClient.EndpointDnsResult r = conn.withClient(c -> c.setEndpointDns(device, iface, dns));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", r.device);
+            structured.put("iface", r.iface);
+            structured.put("dns", r.dns);
+            structured.put("ok", true);
+            String text = "DNS " + r.dns + " aplicado en " + r.device + ":" + r.iface + ".";
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("setEndpointDns fallo: " + e.getMessage());
         }
     }
 

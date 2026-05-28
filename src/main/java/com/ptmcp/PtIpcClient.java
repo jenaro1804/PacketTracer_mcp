@@ -488,6 +488,22 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Configura el servidor DNS de una interfaz de un end-device (PC, Laptop,
+     * Server). Equivale al campo "DNS Server" de la pestana IP Configuration.
+     * No toca IP/mask/gateway ni el flag de DHCP.
+     *
+     * @param deviceName nombre del end-device (ej. "PC0").
+     * @param ifaceName  interfaz a configurar (ej. "FastEthernet0").
+     * @param dns        IP del servidor DNS (ej. "8.8.8.8").
+     */
+    public EndpointDnsResult setEndpointDns(String deviceName, String ifaceName, String dns) {
+        if (dns == null || dns.isEmpty()) throw new IllegalArgumentException("dns es obligatorio.");
+        HostBinding hb = resolveHostBinding(deviceName, ifaceName);
+        hb.port.setDnsServerIp(new IPAddressImpl(dns));
+        return new EndpointDnsResult(deviceName, ifaceName, dns);
+    }
+
+    /**
      * Resuelve un end-device + interfaz a su par (Pc, HostPort), validando que
      * el dispositivo exista, sea un end-device (no CiscoDevice) y que la interfaz
      * sea de host. Compartido por setEndpointIp y setEndpointDhcp.
@@ -697,6 +713,18 @@ public class PtIpcClient implements AutoCloseable {
             this.device = device;
             this.iface = iface;
             this.dhcpEnabled = dhcpEnabled;
+        }
+    }
+
+    public static final class EndpointDnsResult {
+        public final String device;
+        public final String iface;
+        public final String dns;
+
+        public EndpointDnsResult(String device, String iface, String dns) {
+            this.device = device;
+            this.iface = iface;
+            this.dns = dns;
         }
     }
 }
