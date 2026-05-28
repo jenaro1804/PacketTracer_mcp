@@ -257,6 +257,20 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
+     * Borra el enlace conectado a una interfaz de un dispositivo, sin tocar los
+     * dispositivos. Util para recablear una topologia existente.
+     *
+     * @param deviceName nombre del dispositivo (ej. "Router0").
+     * @param ifaceName  interfaz cuyo cable se quita (ej. "GigabitEthernet0/0").
+     * @return true si PT borro un enlace; false si esa interfaz no tenia cable.
+     */
+    public boolean deleteLink(String deviceName, String ifaceName) {
+        if (deviceName == null || deviceName.isEmpty()) throw new IllegalArgumentException("device es obligatorio.");
+        if (ifaceName == null || ifaceName.isEmpty()) throw new IllegalArgumentException("iface es obligatorio.");
+        return logicalWorkspace().deleteLink(deviceName, ifaceName);
+    }
+
+    /**
      * Ejecuta un comando IOS en un dispositivo Cisco.
      *
      * @param deviceName nombre del dispositivo (debe ser un CiscoDevice: router,

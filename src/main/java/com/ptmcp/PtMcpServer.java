@@ -122,6 +122,19 @@ public final class PtMcpServer {
                                 + "\"additionalProperties\":false}",
                         (ex, req) -> handleAutoConnect(conn, req.arguments())),
 
+                tool(jm, "pt_delete_link",
+                        "Borra el cable conectado a una interfaz de un dispositivo, sin borrar los "
+                                + "dispositivos. Util para recablear una topologia. Devuelve deleted=false "
+                                + "(sin error) si esa interfaz no tenia cable.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\"},"
+                                + "\"iface\":{\"type\":\"string\",\"description\":\"Interfaz cuyo cable se quita (ej. GigabitEthernet0/0).\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"iface\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleDeleteLink(conn, req.arguments())),
+
                 tool(jm, "pt_skip_boot",
                         "Salta el arranque simulado de un router/switch Cisco. Sin esto, los routers "
                                 + "tardan ~30-60s en estar listos y los comandos IOS devuelven ERROR_INVALID. "
@@ -322,6 +335,20 @@ public final class PtMcpServer {
             return ok("autoConnect(" + da + " <-> " + db + ") -> ok", Map.of("ok", true));
         } catch (Exception e) {
             return error("autoConnect fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleDeleteLink(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            String iface = reqStr(args, "iface");
+            boolean deleted = conn.withClient(c -> c.deleteLink(device, iface));
+            String text = deleted
+                    ? "Cable borrado en " + device + ":" + iface + "."
+                    : "La interfaz " + device + ":" + iface + " no tenia cable (nada que borrar).";
+            return ok(text, Map.of("deleted", deleted));
+        } catch (Exception e) {
+            return error("deleteLink fallo: " + e.getMessage());
         }
     }
 
