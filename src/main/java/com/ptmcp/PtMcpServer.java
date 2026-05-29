@@ -4,6 +4,7 @@ import com.ptmcp.PtIpcClient.CliResult;
 import com.ptmcp.PtIpcClient.DeviceInfo;
 import com.ptmcp.PtIpcClient.EndpointDhcpResult;
 import com.ptmcp.PtIpcClient.EndpointIpResult;
+import com.ptmcp.PtIpcClient.LinkInfo;
 import com.ptmcp.PtIpcClient.PowerResult;
 import com.ptmcp.PtIpcClient.Topology;
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -65,6 +66,14 @@ public final class PtMcpServer {
                         "Lista los dispositivos y el numero de enlaces actualmente en el lienzo de Packet Tracer.",
                         "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}",
                         (ex, req) -> handleGetTopology(conn)),
+
+                tool(jm, "pt_get_links",
+                        "Lista los enlaces (cables) actuales con sus dos extremos: dispositivo e "
+                                + "interfaz de cada lado y el tipo de cable. Complementa a pt_get_topology, "
+                                + "que solo da el numero de enlaces. dev_b/if_b pueden venir null si solo se "
+                                + "detecto un extremo (p.ej. enlaces inalambricos).",
+                        "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}",
+                        (ex, req) -> handleGetLinks(conn)),
 
                 tool(jm, "pt_add_device",
                         "Crea un dispositivo en el lienzo logico. PT asigna el nombre y lo devuelve. "
@@ -317,6 +326,29 @@ public final class PtMcpServer {
             return ok(text, structured);
         } catch (Exception e) {
             return error("No se pudo leer la topologia: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleGetLinks(ConnectionManager conn) {
+        try {
+            List<LinkInfo> links = conn.withClient(PtIpcClient::getLinks);
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("link_count", links.size());
+            structured.put("links", links.stream().map(l -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("dev_a", l.devA);
+                m.put("if_a", l.ifA);
+                m.put("dev_b", l.devB);
+                m.put("if_b", l.ifB);
+                m.put("cable_type", l.cableType);
+                return m;
+            }).collect(Collectors.toList()));
+
+            String text = "Enlaces: " + links.size() + "\n"
+                    + links.stream().map(l -> "  - " + l).collect(Collectors.joining("\n"));
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("No se pudo leer el cableado: " + e.getMessage());
         }
     }
 

@@ -11,8 +11,10 @@ import com.cisco.pt.ipc.sim.CiscoDevice;
 import com.cisco.pt.util.Pair;
 import com.cisco.pt.ipc.sim.Device;
 import com.cisco.pt.ipc.sim.HostPort;
+import com.cisco.pt.ipc.sim.Link;
 import com.cisco.pt.ipc.sim.Network;
 import com.cisco.pt.ipc.sim.Pc;
+import com.cisco.pt.ipc.sim.Port;
 import com.cisco.pt.ipc.ui.AppWindow;
 import com.cisco.pt.ipc.ui.IPC;
 import com.cisco.pt.ipc.ui.LogicalWorkspace;
@@ -27,7 +29,9 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -214,6 +218,76 @@ public class PtIpcClient implements AutoCloseable {
             throw new IllegalArgumentException("No existe dispositivo '" + deviceName + "'.");
         }
         return d.getPorts();
+    }
+
+    /**
+     * Reconstruye el cableado de la topologia. El SDK no expone los extremos de un
+     * {@link Link} (solo su tipo de cable), asi que se itera cada puerto de cada
+     * dispositivo, se anota el {@code Link} que cuelga de el y se emparejan los dos
+     * extremos que comparten el mismo enlace.
+     *
+     * <p>La clave para deduplicar es el UUID del Link
+     * ({@code link.getObjectUUID().getDecoratedHexString()}), estable entre ambos
+     * extremos; NO se usa identidad de objeto porque los objetos IPC pueden venir
+     * como proxies nuevos en cada llamada.
+     *
+     * <p>Cada llamada al SDK va blindada con {@link #tryGet} porque tocar un puerto
+     * sin cable o un getter no soportado lanza {@code IPCError} (que extiende Error,
+     * no Exception). Si solo se observa un extremo de un enlace (p.ej. inalambrico),
+     * devB/ifB quedan en null.
+     */
+    public List<LinkInfo> getLinks() {
+        Network network = network();
+        int deviceCount = network.getDeviceCount();
+        // Orden de descubrimiento estable para que la salida sea reproducible.
+        Map<String, List<Endpoint>> byLink = new LinkedHashMap<>();
+        for (int i = 0; i < deviceCount; i++) {
+            Device d = network.getDeviceAt(i);
+            String devName = tryGet(d::getName, null);
+            int portCount = tryGet(d::getPortCount, 0);
+            for (int j = 0; j < portCount; j++) {
+                final int portIndex = j;
+                Port p = tryGet(() -> d.getPortAt(portIndex), null);
+                if (p == null) continue;
+                Link link = tryGet(p::getLink, null);
+                if (link == null) continue;  // puerto sin cable
+                String ifName = tryGet(p::getName, null);
+                String key = tryGet(() -> link.getObjectUUID().getDecoratedHexString(), null);
+                if (key == null) {
+                    // Sin UUID utilizable: tratarlo como enlace de un solo extremo
+                    // para no fusionarlo por error con otro.
+                    key = "__solo:" + devName + "/" + ifName;
+                }
+                String cable = tryGet(() -> link.getConnectionType().name(), null);
+                byLink.computeIfAbsent(key, k -> new ArrayList<>())
+                      .add(new Endpoint(devName, ifName, cable));
+            }
+        }
+
+        List<LinkInfo> links = new ArrayList<>(byLink.size());
+        for (List<Endpoint> ends : byLink.values()) {
+            Endpoint a = ends.get(0);
+            Endpoint b = ends.size() > 1 ? ends.get(1) : null;
+            links.add(new LinkInfo(
+                    a.device, a.iface,
+                    b != null ? b.device : null,
+                    b != null ? b.iface : null,
+                    a.cableType));
+        }
+        return links;
+    }
+
+    /** Un extremo observado de un enlace (uso interno de getLinks). */
+    private static final class Endpoint {
+        final String device;
+        final String iface;
+        final String cableType;
+
+        Endpoint(String device, String iface, String cableType) {
+            this.device = device;
+            this.iface = iface;
+            this.cableType = cableType;
+        }
     }
 
     /**
@@ -786,6 +860,28 @@ public class PtIpcClient implements AutoCloseable {
         public Topology(List<DeviceInfo> devices, int linkCount) {
             this.devices = devices;
             this.linkCount = linkCount;
+        }
+    }
+
+    public static final class LinkInfo {
+        public final String devA;
+        public final String ifA;
+        public final String devB;       // null si solo se observo un extremo
+        public final String ifB;        // null si solo se observo un extremo
+        public final String cableType;  // tipo de cable (ConnectType); null si PT no lo da
+
+        public LinkInfo(String devA, String ifA, String devB, String ifB, String cableType) {
+            this.devA = devA;
+            this.ifA = ifA;
+            this.devB = devB;
+            this.ifB = ifB;
+            this.cableType = cableType;
+        }
+
+        @Override
+        public String toString() {
+            String b = devB == null ? "(?)" : devB + ":" + ifB;
+            return devA + ":" + ifA + "  <-->  " + b + "  [" + cableType + "]";
         }
     }
 
