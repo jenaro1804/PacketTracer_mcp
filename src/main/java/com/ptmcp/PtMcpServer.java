@@ -278,15 +278,17 @@ public final class PtMcpServer {
                                 + "pt_power(device,true) + pt_skip_boot DESPUES. Si la bahia ya esta ocupada "
                                 + "devuelve added=false: para cambiar un modulo (ej. Ethernet->WiFi en una PC) "
                                 + "usar pt_remove_module primero. Descubrir el 'model' con pt_get_supported_modules "
-                                + "y las bahias con pt_get_modules.",
+                                + "y las bahias con pt_get_modules. El 'type' es OPCIONAL: si se omite, se "
+                                + "autodetecta del tipo de la bahia (recomendado). La respuesta incluye el 'type' "
+                                + "que se uso.",
                         "{\"type\":\"object\","
                                 + "\"properties\":{"
                                 + "\"device\":{\"type\":\"string\",\"description\":\"Dispositivo (ej. Router0, PC0).\"},"
                                 + "\"slot\":{\"type\":\"string\",\"description\":\"Bahia destino (string del SDK, ej. '0/0' en un 2911, '0' en la NIC de una PC).\"},"
-                                + "\"type\":{\"type\":\"string\",\"description\":\"Categoria del modulo: INTERFACE_CARD (HWIC/NIC), NETWORK_MODULE (NM), LINE_CARD, SFP_MODULE, ...\"},"
+                                + "\"type\":{\"type\":\"string\",\"description\":\"OPCIONAL. Tipo de bahia del SDK; si se omite se autodetecta. Valores: INTERFACE_CARD (HWIC de router), PT_HOST_MODULE (NIC de PC/end-device), NETWORK_MODULE (NM), LINE_CARD, SFP_MODULE, ...\"},"
                                 + "\"model\":{\"type\":\"string\",\"description\":\"Nombre del modelo (ej. HWIC-2T). Debe salir de pt_get_supported_modules.\"}"
                                 + "},"
-                                + "\"required\":[\"device\",\"slot\",\"type\",\"model\"],"
+                                + "\"required\":[\"device\",\"slot\",\"model\"],"
                                 + "\"additionalProperties\":false}",
                         (ex, req) -> handleAddModule(conn, req.arguments())),
 
@@ -628,16 +630,21 @@ public final class PtMcpServer {
         try {
             String device = reqStr(args, "device");
             String slot = reqStr(args, "slot");
-            String type = reqStr(args, "type");
+            String type = optStr(args, "type", "");   // opcional: vacio -> autodetectar
             String model = reqStr(args, "model");
-            boolean added = conn.withClient(c -> c.addModule(device, slot, type, model));
+            PtIpcClient.AddModuleResult r = conn.withClient(c -> c.addModule(device, slot, type, model));
             Map<String, Object> structured = new LinkedHashMap<>();
-            structured.put("device", device);
-            structured.put("slot", slot);
-            structured.put("model", model);
-            structured.put("added", added);
-            String text = "addModule(" + device + ", slot=" + slot + ", " + model + ") -> " + added
-                    + (added ? "" : " (¿bahia ocupada o slot/model invalido? El dispositivo debe estar apagado.)");
+            structured.put("device", r.device);
+            structured.put("slot", r.slot);
+            structured.put("model", r.model);
+            structured.put("type", r.type);
+            structured.put("added", r.added);
+            String text = "addModule(" + r.device + ", slot=" + r.slot + ", " + r.model
+                    + ", type=" + r.type + ") -> " + r.added
+                    + (r.added ? ""
+                        : " (added=false: la bahia '" + r.slot + "' (tipo " + r.type + ") podria estar "
+                          + "ocupada -usa pt_remove_module primero- o el model no aplica a esa bahia. "
+                          + "El dispositivo debe estar apagado.)");
             return ok(text, structured);
         } catch (Exception e) {
             return error("addModule fallo: " + e.getMessage());

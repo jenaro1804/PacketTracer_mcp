@@ -627,29 +627,84 @@ public class PtIpcClient implements AutoCloseable {
     }
 
     /**
-     * Instala un modulo en una bahia del dispositivo. Mapea 1-a-1 a
+     * Instala un modulo en una bahia del dispositivo. Mapea a
      * {@code Device.addModule(slot, ModuleType, model)}.
      *
      * <p>OJO: PT exige el dispositivo APAGADO para tocar modulos fisicos
      * (llamar pt_power(device,false) antes, y pt_power(device,true)+pt_skip_boot
-     * despues). Si la bahia ya esta ocupada, addModule devuelve false: para
+     * despues). Si la bahia ya esta ocupada, addModule devuelve added=false: para
      * cambiar un modulo (ej. Ethernet->WiFi en una PC) hay que removeModule primero.
+     *
+     * <p>El {@code type} debe coincidir con el tipo de bahia del SDK, NO con una
+     * categoria generica: un HWIC de router es INTERFACE_CARD, pero la NIC de una
+     * PC es PT_HOST_MODULE (pasar INTERFACE_CARD ahi devuelve added=false en
+     * silencio). Por eso, si {@code type} viene null/vacio, se autodetecta leyendo
+     * el tipo de la bahia del arbol de modulos (resolveSlotType).
      *
      * @param deviceName dispositivo (ej. "Router0", "PC0").
      * @param slot       bahia destino (string del SDK, ej. "0/0" en un 2911, "0"
      *                   en la NIC de una PC). Ver getModules para inspeccionar.
-     * @param type       categoria del modulo (enum ModuleType, case-insensitive):
-     *                   INTERFACE_CARD para HWIC/NIC, NETWORK_MODULE para NM, etc.
+     * @param type       tipo de bahia (enum ModuleType, case-insensitive) u
+     *                   omitir (null/"") para autodetectarlo.
      * @param model      nombre del modelo (ej. "HWIC-2T"). Debe salir de
      *                   getSupportedModules.
-     * @return true si PT confirma la instalacion.
+     * @return AddModuleResult con el flag added y el tipo finalmente usado.
      */
-    public boolean addModule(String deviceName, String slot, String type, String model) {
+    public AddModuleResult addModule(String deviceName, String slot, String type, String model) {
         if (slot == null || slot.isEmpty()) throw new IllegalArgumentException("slot es obligatorio.");
-        if (type == null || type.isEmpty()) throw new IllegalArgumentException("type es obligatorio.");
         if (model == null || model.isEmpty()) throw new IllegalArgumentException("model es obligatorio.");
         Device d = requireDevice(deviceName);
-        return d.addModule(slot, parseModuleType(type), model);
+
+        ModuleType mt;
+        if (type != null && !type.isEmpty()) {
+            mt = parseModuleType(type);            // el agente lo forzo explicitamente
+        } else {
+            mt = resolveSlotType(d, slot);          // autodeteccion
+            if (mt == null) {
+                throw new IllegalArgumentException(
+                        "No se pudo autodetectar el tipo de la bahia '" + slot + "' en '"
+                                + deviceName + "'. Pasa 'type' explicito (INTERFACE_CARD para "
+                                + "HWIC, PT_HOST_MODULE para la NIC de una PC, NETWORK_MODULE para "
+                                + "NM...) o revisa la bahia con pt_get_modules.");
+            }
+        }
+
+        boolean added = d.addModule(slot, mt, model);
+        return new AddModuleResult(deviceName, slot, model, mt.name(), added);
+    }
+
+    /**
+     * Autodetecta el {@link ModuleType} de una bahia a partir de su string de slot.
+     * Convencion observada: el slot "A/B/.../Z" navega por getModuleAt en los
+     * segmentos intermedios y lee getSlotTypeAt en el ultimo. Ejemplos validados:
+     * "0" en una PC -> root.getSlotTypeAt(0) = PT_HOST_MODULE; "0/0" en un 2911 ->
+     * root.getModuleAt(0).getSlotTypeAt(0) = INTERFACE_CARD. Devuelve null si la
+     * navegacion falla (slot fuera de rango, formato raro, IPCError) -> el llamador
+     * cae al fallback de pedir el type explicito.
+     */
+    private ModuleType resolveSlotType(Device d, String slot) {
+        String[] parts = slot.split("/");
+        com.cisco.pt.ipc.sim.Module m = tryGet(d::getRootModule, null);
+        if (m == null) return null;
+        for (int i = 0; i < parts.length - 1; i++) {
+            int idx = parseSlotIndex(parts[i]);
+            if (idx < 0) return null;
+            final com.cisco.pt.ipc.sim.Module cur = m;
+            m = tryGet(() -> cur.getModuleAt(idx), null);
+            if (m == null) return null;
+        }
+        int last = parseSlotIndex(parts[parts.length - 1]);
+        if (last < 0) return null;
+        final com.cisco.pt.ipc.sim.Module fm = m;
+        return tryGet(() -> fm.getSlotTypeAt(last), null);
+    }
+
+    private static int parseSlotIndex(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /**
@@ -978,6 +1033,22 @@ public class PtIpcClient implements AutoCloseable {
             this.ip = ip;
             this.mask = mask;
             this.gateway = gateway;
+        }
+    }
+
+    public static final class AddModuleResult {
+        public final String device;
+        public final String slot;
+        public final String model;
+        public final String type;     // tipo de bahia finalmente usado (explicito o autodetectado)
+        public final boolean added;
+
+        public AddModuleResult(String device, String slot, String model, String type, boolean added) {
+            this.device = device;
+            this.slot = slot;
+            this.model = model;
+            this.type = type;
+            this.added = added;
         }
     }
 
