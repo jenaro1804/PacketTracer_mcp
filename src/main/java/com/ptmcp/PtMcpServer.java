@@ -257,6 +257,53 @@ public final class PtMcpServer {
                                 + "\"additionalProperties\":false}",
                         (ex, req) -> handleGetModules(conn, req.arguments())),
 
+                tool(jm, "pt_get_supported_modules",
+                        "Lista los modelos de modulo que un dispositivo admite (los mismos del "
+                                + "navegador de modulos de la GUI). Usar ANTES de pt_add_module para "
+                                + "saber el string EXACTO de modelo a instalar. Aplica a routers/switches "
+                                + "(HWIC, NM, ...) y a end-devices (la NIC swappable de una PC: Ethernet vs WiFi). "
+                                + "Solo lectura.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Nombre del dispositivo (ej. Router0, PC0).\"}"
+                                + "},"
+                                + "\"required\":[\"device\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleGetSupportedModules(conn, req.arguments())),
+
+                tool(jm, "pt_add_module",
+                        "Instala un modulo en una bahia de un dispositivo (ej. un HWIC-2T serial en un "
+                                + "2911, o una NIC WiFi en una PC). IMPORTANTE: PT exige el dispositivo APAGADO "
+                                + "para tocar modulos fisicos: llamar pt_power(device,false) ANTES, y "
+                                + "pt_power(device,true) + pt_skip_boot DESPUES. Si la bahia ya esta ocupada "
+                                + "devuelve added=false: para cambiar un modulo (ej. Ethernet->WiFi en una PC) "
+                                + "usar pt_remove_module primero. Descubrir el 'model' con pt_get_supported_modules "
+                                + "y las bahias con pt_get_modules.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Dispositivo (ej. Router0, PC0).\"},"
+                                + "\"slot\":{\"type\":\"string\",\"description\":\"Bahia destino (string del SDK, ej. '0/0' en un 2911, '0' en la NIC de una PC).\"},"
+                                + "\"type\":{\"type\":\"string\",\"description\":\"Categoria del modulo: INTERFACE_CARD (HWIC/NIC), NETWORK_MODULE (NM), LINE_CARD, SFP_MODULE, ...\"},"
+                                + "\"model\":{\"type\":\"string\",\"description\":\"Nombre del modelo (ej. HWIC-2T). Debe salir de pt_get_supported_modules.\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"slot\",\"type\",\"model\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleAddModule(conn, req.arguments())),
+
+                tool(jm, "pt_remove_module",
+                        "Quita el modulo de una bahia, dejandola libre. Mismo requisito de apagado que "
+                                + "pt_add_module (pt_power off antes). Necesario para cambiar un modulo por otro "
+                                + "(ej. quitar el Ethernet de una PC antes de instalarle una NIC WiFi). Devuelve "
+                                + "removed=false (sin error) si la bahia ya estaba vacia.",
+                        "{\"type\":\"object\","
+                                + "\"properties\":{"
+                                + "\"device\":{\"type\":\"string\",\"description\":\"Dispositivo (ej. Router0, PC0).\"},"
+                                + "\"slot\":{\"type\":\"string\",\"description\":\"Bahia a vaciar (mismo string que pt_add_module).\"}"
+                                + "},"
+                                + "\"required\":[\"device\",\"slot\"],"
+                                + "\"additionalProperties\":false}",
+                        (ex, req) -> handleRemoveModule(conn, req.arguments())),
+
                 tool(jm, "pt_save_file",
                         "Guarda la topologia actual en un archivo .pkt. La ruta es del lado de la "
                                 + "maquina donde corre Packet Tracer; usar ruta absoluta (ej. C:\\\\redes\\\\lab1.pkt).",
@@ -562,6 +609,53 @@ public final class PtMcpServer {
             return ok(text, structured);
         } catch (Exception e) {
             return error("getEndpointConfig fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleGetSupportedModules(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            List<String> models = conn.withClient(c -> c.getSupportedModules(device));
+            String text = "Modulos soportados por " + device + " (" + models.size() + "):\n"
+                    + models.stream().map(m -> "  - " + m).collect(Collectors.joining("\n"));
+            return ok(text, Map.of("device", device, "modules", models));
+        } catch (Exception e) {
+            return error("getSupportedModules fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleAddModule(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            String slot = reqStr(args, "slot");
+            String type = reqStr(args, "type");
+            String model = reqStr(args, "model");
+            boolean added = conn.withClient(c -> c.addModule(device, slot, type, model));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", device);
+            structured.put("slot", slot);
+            structured.put("model", model);
+            structured.put("added", added);
+            String text = "addModule(" + device + ", slot=" + slot + ", " + model + ") -> " + added
+                    + (added ? "" : " (¿bahia ocupada o slot/model invalido? El dispositivo debe estar apagado.)");
+            return ok(text, structured);
+        } catch (Exception e) {
+            return error("addModule fallo: " + e.getMessage());
+        }
+    }
+
+    private static CallToolResult handleRemoveModule(ConnectionManager conn, Map<String, Object> args) {
+        try {
+            String device = reqStr(args, "device");
+            String slot = reqStr(args, "slot");
+            boolean removed = conn.withClient(c -> c.removeModule(device, slot));
+            Map<String, Object> structured = new LinkedHashMap<>();
+            structured.put("device", device);
+            structured.put("slot", slot);
+            structured.put("removed", removed);
+            return ok("removeModule(" + device + ", slot=" + slot + ") -> " + removed, structured);
+        } catch (Exception e) {
+            return error("removeModule fallo: " + e.getMessage());
         }
     }
 

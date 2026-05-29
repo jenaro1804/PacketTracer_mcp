@@ -7,6 +7,7 @@ import com.cisco.pt.ipc.enums.CommandStatus;
 import com.cisco.pt.ipc.enums.ConnectType;
 import com.cisco.pt.ipc.enums.DeviceType;
 import com.cisco.pt.ipc.enums.FileOpenReturnValue;
+import com.cisco.pt.ipc.enums.ModuleType;
 import com.cisco.pt.ipc.sim.CiscoDevice;
 import com.cisco.pt.util.Pair;
 import com.cisco.pt.ipc.sim.Device;
@@ -612,6 +613,60 @@ public class PtIpcClient implements AutoCloseable {
      * nombre, slotPath, tipo, la lista de sus slots (index + tipo) y la lista de
      * sus submodulos instalados.
      */
+    /**
+     * Lista los modelos de modulo que ese dispositivo admite (los mismos que
+     * aparecen en el navegador de modulos de la GUI). El agente usa esta lista
+     * para descubrir el string EXACTO de modelo antes de llamar a addModule.
+     * Aplica a routers/switches (HWIC, NM, ...) y tambien a end-devices (la NIC
+     * swappable de una PC: Ethernet vs. WiFi).
+     */
+    public List<String> getSupportedModules(String deviceName) {
+        Device d = requireDevice(deviceName);
+        List<String> mods = tryGet(d::getSupportedModule, null);
+        return mods == null ? new ArrayList<>() : mods;
+    }
+
+    /**
+     * Instala un modulo en una bahia del dispositivo. Mapea 1-a-1 a
+     * {@code Device.addModule(slot, ModuleType, model)}.
+     *
+     * <p>OJO: PT exige el dispositivo APAGADO para tocar modulos fisicos
+     * (llamar pt_power(device,false) antes, y pt_power(device,true)+pt_skip_boot
+     * despues). Si la bahia ya esta ocupada, addModule devuelve false: para
+     * cambiar un modulo (ej. Ethernet->WiFi en una PC) hay que removeModule primero.
+     *
+     * @param deviceName dispositivo (ej. "Router0", "PC0").
+     * @param slot       bahia destino (string del SDK, ej. "0/0" en un 2911, "0"
+     *                   en la NIC de una PC). Ver getModules para inspeccionar.
+     * @param type       categoria del modulo (enum ModuleType, case-insensitive):
+     *                   INTERFACE_CARD para HWIC/NIC, NETWORK_MODULE para NM, etc.
+     * @param model      nombre del modelo (ej. "HWIC-2T"). Debe salir de
+     *                   getSupportedModules.
+     * @return true si PT confirma la instalacion.
+     */
+    public boolean addModule(String deviceName, String slot, String type, String model) {
+        if (slot == null || slot.isEmpty()) throw new IllegalArgumentException("slot es obligatorio.");
+        if (type == null || type.isEmpty()) throw new IllegalArgumentException("type es obligatorio.");
+        if (model == null || model.isEmpty()) throw new IllegalArgumentException("model es obligatorio.");
+        Device d = requireDevice(deviceName);
+        return d.addModule(slot, parseModuleType(type), model);
+    }
+
+    /**
+     * Quita el modulo de una bahia. Mapea 1-a-1 a {@code Device.removeModule(slot)}.
+     * Mismo requisito de apagado que addModule. Necesario para cambiar un modulo
+     * por otro (quitar el existente antes de instalar el nuevo).
+     *
+     * @param slot bahia a vaciar (mismo string que addModule).
+     * @return true si PT confirma el retiro (false si la bahia ya estaba vacia o
+     *         no se pudo quitar).
+     */
+    public boolean removeModule(String deviceName, String slot) {
+        if (slot == null || slot.isEmpty()) throw new IllegalArgumentException("slot es obligatorio.");
+        Device d = requireDevice(deviceName);
+        return d.removeModule(slot);
+    }
+
     public ModulesResult getModules(String deviceName) {
         if (deviceName == null || deviceName.isEmpty()) {
             throw new IllegalArgumentException("device es obligatorio.");
@@ -758,6 +813,30 @@ public class PtIpcClient implements AutoCloseable {
                             + "Valores validos: ROUTER, SWITCH, PC, SERVER, LAPTOP, HUB, "
                             + "ACCESS_POINT, WIRELESS_ROUTER, MULTI_LAYER_SWITCH, ASA, ...");
         }
+    }
+
+    private static ModuleType parseModuleType(String raw) {
+        String normalized = raw.trim().toUpperCase().replace('-', '_').replace(' ', '_');
+        try {
+            return ModuleType.valueOf(normalized);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Tipo de modulo desconocido: '" + raw + "'. "
+                            + "Valores comunes: INTERFACE_CARD (HWIC/NIC), NETWORK_MODULE (NM), "
+                            + "LINE_CARD, SFP_MODULE, ...");
+        }
+    }
+
+    /** Resuelve un dispositivo por nombre o lanza IllegalArgumentException claro. */
+    private Device requireDevice(String deviceName) {
+        if (deviceName == null || deviceName.isEmpty()) {
+            throw new IllegalArgumentException("device es obligatorio.");
+        }
+        Device d = network().getDevice(deviceName);
+        if (d == null) {
+            throw new IllegalArgumentException("No existe dispositivo '" + deviceName + "'.");
+        }
+        return d;
     }
 
     // ---- carga de credenciales ----
